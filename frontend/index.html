@@ -1121,824 +1121,1605 @@
 
 <script>
 
-    /* =========================================
-       CONFIG
-    ========================================= */
+/* =====================================================
+   CONFIGURATION
+===================================================== */
 
-    const API_URL =
-        "http://localhost:5000/api/ask";
+/*
+   Your teammate will give you the ESP32 IP address.
 
+   Example:
+   ESP32 IP = 192.168.1.50
 
-    /* =========================================
-       ELEMENTS
-    ========================================= */
+   Then use:
+   ws://192.168.1.50:81
 
-    const micButton =
-        document.getElementById("micButton");
+   IMPORTANT:
+   Change this IP when your teammate gives you the
+   actual ESP32 IP.
+*/
 
-    const micWrapper =
-        document.getElementById("micWrapper");
+const ESP32_WS_URL = "ws://192.168.1.50:81";
 
-    const micIcon =
-        document.getElementById("micIcon");
-
-    const voiceStatus =
-        document.getElementById("voiceStatus");
-
-    const conversation =
-        document.getElementById("conversation");
-
-    const input =
-        document.getElementById("input");
-
-    const ask =
-        document.getElementById("ask");
-
-    const connection =
-        document.getElementById("connection");
-
-    const weather =
-        document.getElementById("weather");
+const API_URL = "http://localhost:5000/api/ask";
 
 
-    /* =========================================
-       SPEECH RECOGNITION
-    ========================================= */
+/* =====================================================
+   ELEMENTS
+===================================================== */
 
-    const SpeechRecognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
+const micButton =
+    document.getElementById("micButton");
 
-    let recognition = null;
+const micWrapper =
+    document.getElementById("micWrapper");
 
+const micIcon =
+    document.getElementById("micIcon");
 
-    if (SpeechRecognition) {
+const voiceStatus =
+    document.getElementById("voiceStatus");
 
-        recognition =
-            new SpeechRecognition();
+const conversation =
+    document.getElementById("conversation");
 
-        recognition.lang =
-            "en-US";
+const input =
+    document.getElementById("input");
 
-        recognition.continuous =
-            false;
+const ask =
+    document.getElementById("ask");
 
-        recognition.interimResults =
-            false;
+const connection =
+    document.getElementById("connection");
 
+const statusDot =
+    document.getElementById("statusDot");
 
-        recognition.onstart = () => {
-
-            micButton.classList.add(
-                "listening"
-            );
-
-            micWrapper.classList.add(
-                "listening"
-            );
-
-            micIcon.setAttribute(
-                "stroke",
-                "#FFFFFF"
-            );
-
-            voiceStatus.innerHTML =
-                "<strong>Listening...</strong> Speak now";
-
-            connection.textContent =
-                "Listening";
-
-        };
+const weather =
+    document.getElementById("weather");
 
 
-        recognition.onresult = (event) => {
+/* =====================================================
+   ESP32 WEBSOCKET
+===================================================== */
 
-            const text =
-                event.results[0][0].transcript;
+let socket = null;
 
-            input.value =
-                text;
+let reconnectTimer = null;
 
-            addUserMessage(text);
-
-            processCommand(text);
-
-        };
+let manuallyClosed = false;
 
 
-        recognition.onerror = (event) => {
+/*
+   Connect dashboard → ESP32
+*/
 
-            console.error(
-                "Speech error:",
-                event.error
-            );
+function connectESP32() {
 
-            resetVoice();
+    if (socket &&
+        (socket.readyState === WebSocket.OPEN ||
+         socket.readyState === WebSocket.CONNECTING)) {
 
-            addAIMessage(
-                "I couldn't understand that. Please try again."
-            );
-
-        };
-
-
-        recognition.onend = () => {
-
-            resetVoice();
-
-        };
+        return;
 
     }
 
 
-    /* =========================================
-       MICROPHONE
-    ========================================= */
+    manuallyClosed = false;
 
-    micButton.addEventListener(
-        "click",
-        () => {
+    setConnectionStatus(
+        "Connecting",
+        false
+    );
 
-            if (!recognition) {
 
-                addAIMessage(
-                    "Voice recognition is not supported in this browser. Please use Chrome or Edge."
+    try {
+
+        socket =
+            new WebSocket(
+                ESP32_WS_URL
+            );
+
+
+        /* -----------------------------------------
+           CONNECTED
+        ----------------------------------------- */
+
+        socket.onopen = () => {
+
+            console.log(
+                "ESP32 WebSocket connected"
+            );
+
+
+            setConnectionStatus(
+                "ESP32 Connected",
+                true
+            );
+
+
+            voiceStatus.textContent =
+                "ESP32 connected. Ready for voice commands";
+
+
+            /*
+               Tell ESP32 that dashboard is ready.
+            */
+
+            sendToESP32({
+
+                type: "dashboard",
+
+                status: "connected",
+
+                device: "EchoEdge Dashboard"
+
+            });
+
+        };
+
+
+        /* -----------------------------------------
+           MESSAGE RECEIVED
+        ----------------------------------------- */
+
+        socket.onmessage = event => {
+
+            console.log(
+                "ESP32 → Dashboard:",
+                event.data
+            );
+
+
+            handleESP32Message(
+                event.data
+            );
+
+        };
+
+
+        /* -----------------------------------------
+           DISCONNECTED
+        ----------------------------------------- */
+
+        socket.onclose = () => {
+
+            console.log(
+                "ESP32 WebSocket disconnected"
+            );
+
+
+            setConnectionStatus(
+                "ESP32 Offline",
+                false
+            );
+
+
+            voiceStatus.textContent =
+                "ESP32 disconnected";
+
+
+            if (!manuallyClosed) {
+
+                scheduleReconnect();
+
+            }
+
+        };
+
+
+        /* -----------------------------------------
+           ERROR
+        ----------------------------------------- */
+
+        socket.onerror = error => {
+
+            console.error(
+                "ESP32 WebSocket error:",
+                error
+            );
+
+
+            setConnectionStatus(
+                "ESP32 Error",
+                false
+            );
+
+        };
+
+    } catch (error) {
+
+        console.error(
+            "WebSocket connection failed:",
+            error
+        );
+
+
+        setConnectionStatus(
+            "ESP32 Offline",
+            false
+        );
+
+
+        scheduleReconnect();
+
+    }
+
+}
+
+
+/* =====================================================
+   RECONNECT
+===================================================== */
+
+function scheduleReconnect() {
+
+    if (reconnectTimer)
+        return;
+
+
+    reconnectTimer =
+        setTimeout(() => {
+
+            reconnectTimer = null;
+
+            connectESP32();
+
+        }, 3000);
+
+}
+
+
+/* =====================================================
+   CONNECTION STATUS
+===================================================== */
+
+function setConnectionStatus(
+    text,
+    connected
+) {
+
+    connection.textContent =
+        text;
+
+
+    if (connected) {
+
+        statusDot.style.background =
+            "var(--success)";
+
+        statusDot.style.boxShadow =
+            "0 0 12px rgba(142,170,155,0.6)";
+
+    } else {
+
+        statusDot.style.background =
+            "var(--danger)";
+
+        statusDot.style.boxShadow =
+            "0 0 12px rgba(184,121,121,0.5)";
+
+    }
+
+}
+
+
+/* =====================================================
+   SEND MESSAGE TO ESP32
+===================================================== */
+
+function sendToESP32(data) {
+
+    if (!socket ||
+        socket.readyState !== WebSocket.OPEN) {
+
+        console.warn(
+            "ESP32 is not connected"
+        );
+
+        return false;
+
+    }
+
+
+    socket.send(
+        JSON.stringify(data)
+    );
+
+
+    console.log(
+        "Dashboard → ESP32:",
+        data
+    );
+
+
+    return true;
+
+}
+
+
+/* =====================================================
+   HANDLE ESP32 MESSAGE
+===================================================== */
+
+function handleESP32Message(rawMessage) {
+
+    let message;
+
+
+    /*
+       ESP32 should ideally send JSON.
+    */
+
+    try {
+
+        message =
+            JSON.parse(rawMessage);
+
+    } catch (error) {
+
+        /*
+           If ESP32 sends plain text,
+           treat it as speech transcript.
+        */
+
+        console.warn(
+            "Non-JSON ESP32 message:",
+            rawMessage
+        );
+
+
+        processHardwareTranscript(
+            rawMessage
+        );
+
+        return;
+
+    }
+
+
+    console.log(
+        "ESP32 message type:",
+        message.type
+    );
+
+
+    switch (message.type) {
+
+
+        /* -----------------------------------------
+           DEVICE STATUS
+        ----------------------------------------- */
+
+        case "status":
+
+            handleDeviceStatus(
+                message
+            );
+
+            break;
+
+
+        /* -----------------------------------------
+           WAKE WORD
+        ----------------------------------------- */
+
+        case "wake_word":
+
+            handleWakeWord(
+                message
+            );
+
+            break;
+
+
+        /* -----------------------------------------
+           USER SPEECH / TRANSCRIPT
+        ----------------------------------------- */
+
+        case "transcript":
+
+        case "speech":
+
+        case "user_message":
+
+        case "question":
+
+            processHardwareTranscript(
+                message.text ||
+                message.transcript ||
+                message.message ||
+                ""
+            );
+
+            break;
+
+
+        /* -----------------------------------------
+           LATENCY
+        ----------------------------------------- */
+
+        case "latency":
+
+            if (message.value !== undefined) {
+
+                console.log(
+                    "Latency:",
+                    message.value,
+                    "ms"
                 );
 
-                return;
             }
+
+            break;
+
+
+        /* -----------------------------------------
+           ASSISTANT RESPONSE
+        ----------------------------------------- */
+
+        case "assistant_response":
+
+            /*
+               Useful if the ESP32 itself sends
+               an already-generated response.
+            */
+
+            if (message.text) {
+
+                addAIMessage(
+                    message.text
+                );
+
+            }
+
+            break;
+
+
+        /* -----------------------------------------
+           ERROR
+        ----------------------------------------- */
+
+        case "error":
+
+            addAIMessage(
+                message.message ||
+                "The EchoEdge device reported an error."
+            );
+
+            break;
+
+
+        default:
+
+            console.log(
+                "Unknown ESP32 message:",
+                message
+            );
+
+    }
+
+}
+
+
+/* =====================================================
+   DEVICE STATUS
+===================================================== */
+
+function handleDeviceStatus(message) {
+
+    const state =
+        message.status ||
+        "Ready";
+
+
+    connection.textContent =
+        "ESP32 " +
+        capitalize(state);
+
+
+    voiceStatus.textContent =
+        "Device status: " +
+        state;
+
+
+    if (message.latency !== undefined) {
+
+        console.log(
+            "Device latency:",
+            message.latency,
+            "ms"
+        );
+
+    }
+
+}
+
+
+/* =====================================================
+   WAKE WORD
+===================================================== */
+
+function handleWakeWord(message) {
+
+    const detected =
+        message.detected !== false;
+
+
+    if (!detected)
+        return;
+
+
+    setListeningUI();
+
+
+    voiceStatus.innerHTML =
+        "<strong>Wake word detected</strong> Listening for your question";
+
+
+    connection.textContent =
+        "Listening";
+
+}
+
+
+/* =====================================================
+   HARDWARE TRANSCRIPT
+===================================================== */
+
+async function processHardwareTranscript(text) {
+
+    text =
+        String(text || "").trim();
+
+
+    if (!text)
+        return;
+
+
+    console.log(
+        "Hardware transcript:",
+        text
+    );
+
+
+    /*
+       Remove wake word if ESP32/STT sends it.
+
+       Examples:
+
+       "Marvin what is the weather today?"
+       →
+       "what is the weather today?"
+
+       "marvin, tell me a joke"
+       →
+       "tell me a joke"
+    */
+
+    const cleanedText =
+        removeWakeWord(text);
+
+
+    /*
+       Display exactly what the user said.
+    */
+
+    addUserMessage(
+        text
+    );
+
+
+    /*
+       Put the recognized speech into
+       the text box as well.
+    */
+
+    input.value =
+        cleanedText;
+
+
+    /*
+       Process the actual question.
+    */
+
+    await processCommand(
+        cleanedText
+    );
+
+}
+
+
+/* =====================================================
+   REMOVE WAKE WORD
+===================================================== */
+
+function removeWakeWord(text) {
+
+    return text
+        .replace(
+            /^\s*marvin[\s,.:;-]*/i,
+            ""
+        )
+        .trim();
+
+}
+
+
+/* =====================================================
+   BROWSER SPEECH RECOGNITION
+===================================================== */
+
+/*
+   This remains useful for testing the dashboard
+   before your ESP32 hardware is ready.
+*/
+
+const SpeechRecognition =
+    window.SpeechRecognition ||
+    window.webkitSpeechRecognition;
+
+let recognition = null;
+
+
+if (SpeechRecognition) {
+
+    recognition =
+        new SpeechRecognition();
+
+
+    recognition.lang =
+        "en-US";
+
+
+    recognition.continuous =
+        false;
+
+
+    recognition.interimResults =
+        false;
+
+
+    recognition.onstart = () => {
+
+        setListeningUI();
+
+
+        voiceStatus.innerHTML =
+            "<strong>Listening...</strong> Speak now";
+
+
+        connection.textContent =
+            "Browser Listening";
+
+    };
+
+
+    recognition.onresult = event => {
+
+        const text =
+            event.results[0][0].transcript;
+
+
+        input.value =
+            text;
+
+
+        addUserMessage(
+            text
+        );
+
+
+        processCommand(
+            text
+        );
+
+    };
+
+
+    recognition.onerror = event => {
+
+        console.error(
+            "Speech error:",
+            event.error
+        );
+
+
+        resetVoice();
+
+
+        addAIMessage(
+            "I couldn't understand that. Please try again."
+        );
+
+    };
+
+
+    recognition.onend = () => {
+
+        resetVoice();
+
+    };
+
+}
+
+
+/* =====================================================
+   MICROPHONE BUTTON
+===================================================== */
+
+micButton.addEventListener(
+    "click",
+    () => {
+
+        if (!recognition) {
+
+            addAIMessage(
+                "Voice recognition is not supported in this browser. Please use Chrome or Edge."
+            );
+
+            return;
+
+        }
+
+
+        try {
+
+            recognition.start();
+
+        } catch (error) {
+
+            console.log(error);
+
+        }
+
+    }
+);
+
+
+/* =====================================================
+   LISTENING UI
+===================================================== */
+
+function setListeningUI() {
+
+    micButton.classList.add(
+        "listening"
+    );
+
+
+    micWrapper.classList.add(
+        "listening"
+    );
+
+
+    micIcon.setAttribute(
+        "stroke",
+        "#FFFFFF"
+    );
+
+}
+
+
+/* =====================================================
+   RESET VOICE
+===================================================== */
+
+function resetVoice() {
+
+    micButton.classList.remove(
+        "listening"
+    );
+
+
+    micWrapper.classList.remove(
+        "listening"
+    );
+
+
+    micIcon.setAttribute(
+        "stroke",
+        "#17201B"
+    );
+
+
+    voiceStatus.textContent =
+        "Tap the microphone to speak";
+
+}
+
+
+/* =====================================================
+   USER MESSAGE
+===================================================== */
+
+function addUserMessage(text) {
+
+    const div =
+        document.createElement("div");
+
+
+    div.className =
+        "message user-message";
+
+
+    div.innerHTML = `
+
+        <div class="message-label">
+            You
+        </div>
+
+        ${escapeHTML(text)}
+
+    `;
+
+
+    conversation.appendChild(
+        div
+    );
+
+
+    scrollConversation();
+
+}
+
+
+/* =====================================================
+   AI MESSAGE
+===================================================== */
+
+function addAIMessage(text) {
+
+    const div =
+        document.createElement("div");
+
+
+    div.className =
+        "message ai-message";
+
+
+    div.innerHTML = `
+
+        <div class="message-label">
+            EchoEdge
+        </div>
+
+        ${escapeHTML(text)}
+
+    `;
+
+
+    conversation.appendChild(
+        div
+    );
+
+
+    scrollConversation();
+
+}
+
+
+/* =====================================================
+   SCROLL
+===================================================== */
+
+function scrollConversation() {
+
+    conversation.scrollTop =
+        conversation.scrollHeight;
+
+}
+
+
+/* =====================================================
+   PROCESS COMMAND
+===================================================== */
+
+async function processCommand(command) {
+
+    command =
+        command.trim();
+
+
+    if (!command)
+        return;
+
+
+    connection.textContent =
+        "Processing";
+
+
+    voiceStatus.innerHTML =
+        "<strong>EchoEdge is thinking...</strong>";
+
+
+    /*
+       Weather request
+    */
+
+    if (
+        command
+            .toLowerCase()
+            .includes("weather")
+    ) {
+
+        await getWeather();
+
+        return;
+
+    }
+
+
+    /*
+       Normal AI request
+    */
+
+    await askAI(
+        command
+    );
+
+}
+
+
+/* =====================================================
+   AI BACKEND
+===================================================== */
+
+async function askAI(question) {
+
+    try {
+
+        const response =
+            await fetch(
+                API_URL,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            message: question
+                        })
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Backend unavailable"
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (!data.success) {
+
+            throw new Error(
+                data.error
+            );
+
+        }
+
+
+        /*
+           DISPLAY ANSWER
+        */
+
+        addAIMessage(
+            data.answer
+        );
+
+
+        /*
+           Browser speaks answer
+        */
+
+        speak(
+            data.answer
+        );
+
+
+        /*
+           Optional:
+           Send answer back to ESP32.
+           Your teammate can use this later
+           for hardware-side text-to-speech.
+        */
+
+        sendToESP32({
+
+            type: "assistant_response",
+
+            text: data.answer
+
+        });
+
+
+        setReadyState();
+
+
+    } catch (error) {
+
+        console.error(
+            error
+        );
+
+
+        addAIMessage(
+            "I couldn't connect to the EchoEdge AI backend. Make sure the backend server is running."
+        );
+
+
+        connection.textContent =
+            "Backend Offline";
+
+
+        voiceStatus.textContent =
+            "Backend connection required";
+
+    }
+
+}
+
+
+/* =====================================================
+   WEATHER
+===================================================== */
+
+async function getWeather() {
+
+    if (!navigator.geolocation) {
+
+        addAIMessage(
+            "Your browser does not support location services."
+        );
+
+        return;
+
+    }
+
+
+    voiceStatus.innerHTML =
+        "<strong>Finding your location...</strong>";
+
+
+    connection.textContent =
+        "Locating";
+
+
+    navigator.geolocation.getCurrentPosition(
+
+        async position => {
+
+            const lat =
+                position.coords.latitude;
+
+
+            const lon =
+                position.coords.longitude;
 
 
             try {
 
-                recognition.start();
+                connection.textContent =
+                    "Fetching weather";
 
-            } catch (error) {
 
-                console.log(error);
+                const url =
+                    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto`;
 
-            }
 
-        }
-    );
+                const response =
+                    await fetch(
+                        url
+                    );
 
 
-    function resetVoice() {
+                if (!response.ok) {
 
-        micButton.classList.remove(
-            "listening"
-        );
-
-        micWrapper.classList.remove(
-            "listening"
-        );
-
-        micIcon.setAttribute(
-            "stroke",
-            "#17201B"
-        );
-
-        voiceStatus.textContent =
-            "Tap the microphone to speak";
-
-        connection.textContent =
-            "Ready";
-
-    }
-
-
-    /* =========================================
-       USER MESSAGE
-    ========================================= */
-
-    function addUserMessage(text) {
-
-        const div =
-            document.createElement("div");
-
-        div.className =
-            "message user-message";
-
-        div.innerHTML = `
-
-            <div class="message-label">
-                You
-            </div>
-
-            ${escapeHTML(text)}
-
-        `;
-
-        conversation.appendChild(div);
-
-        scrollConversation();
-
-    }
-
-
-    /* =========================================
-       AI MESSAGE
-    ========================================= */
-
-    function addAIMessage(text) {
-
-        const div =
-            document.createElement("div");
-
-        div.className =
-            "message ai-message";
-
-        div.innerHTML = `
-
-            <div class="message-label">
-                EchoEdge
-            </div>
-
-            ${escapeHTML(text)}
-
-        `;
-
-        conversation.appendChild(div);
-
-        scrollConversation();
-
-    }
-
-
-    function scrollConversation() {
-
-        conversation.scrollTop =
-            conversation.scrollHeight;
-
-    }
-
-
-    /* =========================================
-       PROCESS COMMAND
-    ========================================= */
-
-    async function processCommand(command) {
-
-        connection.textContent =
-            "Processing";
-
-        voiceStatus.innerHTML =
-            "<strong>EchoEdge is thinking...</strong>";
-
-
-        if (
-            command
-                .toLowerCase()
-                .includes("weather")
-        ) {
-
-            await getWeather();
-
-            return;
-
-        }
-
-
-        await askAI(command);
-
-    }
-
-
-    /* =========================================
-       AI BACKEND
-    ========================================= */
-
-    async function askAI(question) {
-
-        try {
-
-            const response =
-                await fetch(
-                    API_URL,
-                    {
-                        method: "POST",
-
-                        headers: {
-                            "Content-Type":
-                                "application/json"
-                        },
-
-                        body:
-                            JSON.stringify({
-                                message: question
-                            })
-                    }
-                );
-
-
-            if (!response.ok) {
-
-                throw new Error(
-                    "Backend unavailable"
-                );
-
-            }
-
-
-            const data =
-                await response.json();
-
-
-            if (!data.success) {
-
-                throw new Error(
-                    data.error
-                );
-
-            }
-
-
-            addAIMessage(
-                data.answer
-            );
-
-
-            speak(
-                data.answer
-            );
-
-
-            connection.textContent =
-                "Ready";
-
-            voiceStatus.textContent =
-                "Tap the microphone to speak";
-
-
-        } catch (error) {
-
-            console.error(error);
-
-            addAIMessage(
-                "I couldn't connect to the EchoEdge AI backend. Make sure the backend server is running."
-            );
-
-            connection.textContent =
-                "Offline";
-
-            voiceStatus.textContent =
-                "Backend connection required";
-
-        }
-
-    }
-
-
-    /* =========================================
-       WEATHER
-    ========================================= */
-
-    async function getWeather() {
-
-        if (!navigator.geolocation) {
-
-            addAIMessage(
-                "Your browser does not support location services."
-            );
-
-            return;
-
-        }
-
-
-        voiceStatus.innerHTML =
-            "<strong>Finding your location...</strong>";
-
-        connection.textContent =
-            "Locating";
-
-
-        navigator.geolocation.getCurrentPosition(
-
-            async position => {
-
-                const lat =
-                    position.coords.latitude;
-
-                const lon =
-                    position.coords.longitude;
-
-
-                try {
-
-                    connection.textContent =
-                        "Fetching weather";
-
-
-                    const url =
-                        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto`;
-
-
-                    const response =
-                        await fetch(url);
-
-
-                    const data =
-                        await response.json();
-
-
-                    showWeather(data);
-
-
-                } catch (error) {
-
-                    console.error(error);
-
-                    addAIMessage(
-                        "I couldn't retrieve the weather right now."
+                    throw new Error(
+                        "Weather API failed"
                     );
 
                 }
 
-            },
+
+                const data =
+                    await response.json();
 
 
-            error => {
-
-                console.error(error);
-
-                addAIMessage(
-                    "Please allow location access so EchoEdge can check your local weather."
+                showWeather(
+                    data
                 );
 
-                connection.textContent =
-                    "Location required";
+
+            } catch (error) {
+
+                console.error(
+                    error
+                );
+
+
+                addAIMessage(
+                    "I couldn't retrieve the weather right now."
+                );
+
+
+                setReadyState();
 
             }
 
+        },
+
+
+        error => {
+
+            console.error(
+                error
+            );
+
+
+            addAIMessage(
+                "Please allow location access so EchoEdge can check your local weather."
+            );
+
+
+            connection.textContent =
+                "Location Required";
+
+        }
+
+    );
+
+}
+
+
+/* =====================================================
+   SHOW WEATHER
+===================================================== */
+
+function showWeather(data) {
+
+    const current =
+        data.current;
+
+
+    const temp =
+        Math.round(
+            current.temperature_2m
         );
 
-    }
 
+    const feels =
+        Math.round(
+            current.apparent_temperature
+        );
 
-    /* =========================================
-       SHOW WEATHER
-    ========================================= */
 
-    function showWeather(data) {
+    const humidity =
+        current.relative_humidity_2m;
 
-        const current =
-            data.current;
 
+    const wind =
+        Math.round(
+            current.wind_speed_10m
+        );
 
-        const temp =
-            Math.round(
-                current.temperature_2m
-            );
 
+    const weatherInfo =
+        getWeatherInfo(
+            current.weather_code
+        );
 
-        const feels =
-            Math.round(
-                current.apparent_temperature
-            );
 
+    document.getElementById(
+        "temperature"
+    ).textContent =
+        `${temp}°C`;
 
-        const humidity =
-            current.relative_humidity_2m;
 
+    document.getElementById(
+        "feels"
+    ).textContent =
+        `${feels}°C`;
 
-        const wind =
-            Math.round(
-                current.wind_speed_10m
-            );
 
+    document.getElementById(
+        "humidity"
+    ).textContent =
+        `${humidity}%`;
 
-        const weatherInfo =
-            getWeatherInfo(
-                current.weather_code
-            );
 
+    document.getElementById(
+        "wind"
+    ).textContent =
+        `${wind} km/h`;
 
-        document.getElementById(
-            "temperature"
-        ).textContent =
-            `${temp}°C`;
 
+    document.getElementById(
+        "condition"
+    ).textContent =
+        weatherInfo.text;
 
-        document.getElementById(
-            "feels"
-        ).textContent =
-            `${feels}°C`;
 
+    document.getElementById(
+        "weatherCity"
+    ).textContent =
+        `${Math.abs(data.latitude).toFixed(2)}° ${
+            data.latitude >= 0 ? "N" : "S"
+        }, ${
+            Math.abs(data.longitude).toFixed(2)
+        }° ${
+            data.longitude >= 0 ? "E" : "W"
+        }`;
 
-        document.getElementById(
-            "humidity"
-        ).textContent =
-            `${humidity}%`;
 
+    document.getElementById(
+        "weatherIcon"
+    ).innerHTML =
+        weatherInfo.svg;
 
-        document.getElementById(
-            "wind"
-        ).textContent =
-            `${wind} km/h`;
 
+    weather.style.display =
+        "block";
 
-        document.getElementById(
-            "condition"
-        ).textContent =
-            weatherInfo.text;
 
+    /*
+       Create natural answer.
+    */
 
-        document.getElementById(
-            "weatherCity"
-        ).textContent =
-            `${Math.abs(data.latitude).toFixed(2)}° ${
-                data.latitude >= 0 ? "N" : "S"
-            }, ${
-                Math.abs(data.longitude).toFixed(2)
-            }° ${
-                data.longitude >= 0 ? "E" : "W"
-            }`;
+    const answer =
+        `The current temperature is ${temp} degrees Celsius with ${weatherInfo.text.toLowerCase()}. It feels like ${feels} degrees. Humidity is ${humidity} percent and wind speed is ${wind} kilometers per hour.`;
 
 
-        document.getElementById(
-            "weatherIcon"
-        ).innerHTML =
-            weatherInfo.svg;
+    /*
+       Display answer in conversation.
+    */
 
+    addAIMessage(
+        answer
+    );
 
-        weather.style.display =
-            "block";
 
+    /*
+       Speak answer.
+    */
 
-        const answer =
-            `The current temperature is ${temp} degrees Celsius with ${weatherInfo.text.toLowerCase()}. It feels like ${feels} degrees. Humidity is ${humidity} percent and wind speed is ${wind} kilometers per hour.`;
+    speak(
+        answer
+    );
 
 
-        addAIMessage(answer);
+    /*
+       Send answer to ESP32.
+    */
 
-        speak(answer);
+    sendToESP32({
 
+        type: "assistant_response",
 
-        connection.textContent =
-            "Ready";
+        text: answer
 
-        voiceStatus.textContent =
-            "Tap the microphone to speak";
+    });
 
-    }
 
+    setReadyState();
 
-    /* =========================================
-       WEATHER INFORMATION
-    ========================================= */
+}
 
-    function getWeatherInfo(code) {
 
-        const sun = `
-            <svg viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round">
+/* =====================================================
+   WEATHER INFORMATION
+===================================================== */
 
-                <circle cx="12" cy="12" r="4"></circle>
-                <path d="M12 2v2"></path>
-                <path d="M12 20v2"></path>
-                <path d="M4.93 4.93l1.41 1.41"></path>
-                <path d="M17.66 17.66l1.41 1.41"></path>
-                <path d="M2 12h2"></path>
-                <path d="M20 12h2"></path>
-                <path d="M4.93 19.07l1.41-1.41"></path>
-                <path d="M17.66 6.34l1.41-1.41"></path>
+function getWeatherInfo(code) {
 
-            </svg>
-        `;
+    const sun = `
+        <svg viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round">
 
+            <circle cx="12" cy="12" r="4"></circle>
 
-        const cloud = `
-            <svg viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round">
+            <path d="M12 2v2"></path>
+            <path d="M12 20v2"></path>
 
-                <path d="M17.5 19H8a5 5 0 1 1 1.8-9.66A6 6 0 0 1 21 12.5"></path>
-                <path d="M17 19a4 4 0 0 0 0-8"></path>
+            <path d="M4.93 4.93l1.41 1.41"></path>
+            <path d="M17.66 17.66l1.41 1.41"></path>
 
-            </svg>
-        `;
+            <path d="M2 12h2"></path>
+            <path d="M20 12h2"></path>
 
+            <path d="M4.93 19.07l1.41-1.41"></path>
+            <path d="M17.66 6.34l1.41-1.41"></path>
 
-        const rain = `
-            <svg viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round">
+        </svg>
+    `;
 
-                <path d="M17.5 19H8a5 5 0 1 1 1.8-9.66A6 6 0 0 1 21 12.5"></path>
-                <path d="M8 21l-1 2"></path>
-                <path d="M13 21l-1 2"></path>
-                <path d="M18 21l-1 2"></path>
 
-            </svg>
-        `;
+    const cloud = `
+        <svg viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round">
 
+            <path d="M17.5 19H8a5 5 0 1 1 1.8-9.66A6 6 0 0 1 21 12.5"></path>
 
-        if (code === 0) {
+            <path d="M17 19a4 4 0 0 0 0-8"></path>
 
-            return {
-                text: "Clear sky",
-                svg: sun
-            };
+        </svg>
+    `;
 
-        }
 
+    const rain = `
+        <svg viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round">
 
-        if (code === 1 || code === 2) {
+            <path d="M17.5 19H8a5 5 0 1 1 1.8-9.66A6 6 0 0 1 21 12.5"></path>
 
-            return {
-                text: "Partly cloudy",
-                svg: cloud
-            };
+            <path d="M8 21l-1 2"></path>
+            <path d="M13 21l-1 2"></path>
+            <path d="M18 21l-1 2"></path>
 
-        }
+        </svg>
+    `;
 
 
-        if (code === 3) {
-
-            return {
-                text: "Overcast",
-                svg: cloud
-            };
-
-        }
-
-
-        if (code >= 45 && code <= 48) {
-
-            return {
-                text: "Foggy",
-                svg: cloud
-            };
-
-        }
-
-
-        if (code >= 51 && code <= 67) {
-
-            return {
-                text: "Rain",
-                svg: rain
-            };
-
-        }
-
-
-        if (code >= 71 && code <= 77) {
-
-            return {
-                text: "Snow",
-                svg: cloud
-            };
-
-        }
-
-
-        if (code >= 80 && code <= 82) {
-
-            return {
-                text: "Rain showers",
-                svg: rain
-            };
-
-        }
-
-
-        if (code >= 95) {
-
-            return {
-                text: "Thunderstorm",
-                svg: rain
-            };
-
-        }
-
+    if (code === 0) {
 
         return {
-            text: "Unknown conditions",
+            text: "Clear sky",
+            svg: sun
+        };
+
+    }
+
+
+    if (code === 1 || code === 2) {
+
+        return {
+            text: "Partly cloudy",
             svg: cloud
         };
 
     }
 
 
-    /* =========================================
-       TEXT INPUT
-    ========================================= */
+    if (code === 3) {
 
-    ask.addEventListener(
-        "click",
-        sendText
-    );
+        return {
+            text: "Overcast",
+            svg: cloud
+        };
+
+    }
 
 
-    input.addEventListener(
-        "keydown",
-        event => {
+    if (code >= 45 && code <= 48) {
 
-            if (event.key === "Enter") {
+        return {
+            text: "Foggy",
+            svg: cloud
+        };
 
-                sendText();
+    }
 
-            }
+
+    if (code >= 51 && code <= 67) {
+
+        return {
+            text: "Rain",
+            svg: rain
+        };
+
+    }
+
+
+    if (code >= 71 && code <= 77) {
+
+        return {
+            text: "Snow",
+            svg: cloud
+        };
+
+    }
+
+
+    if (code >= 80 && code <= 82) {
+
+        return {
+            text: "Rain showers",
+            svg: rain
+        };
+
+    }
+
+
+    if (code >= 95) {
+
+        return {
+            text: "Thunderstorm",
+            svg: rain
+        };
+
+    }
+
+
+    return {
+        text: "Unknown conditions",
+        svg: cloud
+    };
+
+}
+
+
+/* =====================================================
+   TEXT INPUT
+===================================================== */
+
+ask.addEventListener(
+    "click",
+    sendText
+);
+
+
+input.addEventListener(
+    "keydown",
+    event => {
+
+        if (event.key === "Enter") {
+
+            sendText();
 
         }
+
+    }
+);
+
+
+function sendText() {
+
+    const question =
+        input.value.trim();
+
+
+    if (!question)
+        return;
+
+
+    addUserMessage(
+        question
     );
 
 
-    function sendText() {
-
-        const question =
-            input.value.trim();
+    input.value =
+        "";
 
 
-        if (!question)
-            return;
+    processCommand(
+        question
+    );
+
+}
 
 
-        addUserMessage(
-            question
+/* =====================================================
+   TEXT TO SPEECH
+===================================================== */
+
+function speak(text) {
+
+    if (
+        !("speechSynthesis" in window)
+    )
+        return;
+
+
+    window.speechSynthesis.cancel();
+
+
+    const utterance =
+        new SpeechSynthesisUtterance(
+            text
         );
 
 
-        input.value =
-            "";
+    utterance.rate =
+        1;
 
 
-        processCommand(
-            question
-        );
-
-    }
+    utterance.pitch =
+        1;
 
 
-    /* =========================================
-       TEXT TO SPEECH
-    ========================================= */
-
-    function speak(text) {
-
-        if (
-            !("speechSynthesis" in window)
-        )
-            return;
+    utterance.volume =
+        1;
 
 
-        window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(
+        utterance
+    );
+
+}
 
 
-        const utterance =
-            new SpeechSynthesisUtterance(
-                text
-            );
+/* =====================================================
+   READY STATE
+===================================================== */
+
+function setReadyState() {
+
+    connection.textContent =
+        socket &&
+        socket.readyState === WebSocket.OPEN
+            ? "ESP32 Connected"
+            : "Ready";
 
 
-        utterance.rate =
-            1;
-
-        utterance.pitch =
-            1;
-
-        utterance.volume =
-            1;
+    voiceStatus.textContent =
+        "Tap the microphone to speak";
 
 
-        window.speechSynthesis.speak(
-            utterance
-        );
+    resetVoice();
 
-    }
+}
 
 
-    /* =========================================
-       SECURITY
-    ========================================= */
+/* =====================================================
+   CAPITALIZE
+===================================================== */
 
-    function escapeHTML(text) {
+function capitalize(text) {
 
-        const div =
-            document.createElement("div");
+    return text.charAt(0).toUpperCase() +
+           text.slice(1);
 
-
-        div.textContent =
-            text;
+}
 
 
-        return div.innerHTML;
+/* =====================================================
+   SECURITY
+===================================================== */
 
-    }
+function escapeHTML(text) {
+
+    const div =
+        document.createElement("div");
+
+
+    div.textContent =
+        text;
+
+
+    return div.innerHTML;
+
+}
+
+
+/* =====================================================
+   START ESP32 CONNECTION
+===================================================== */
+
+connectESP32();
 
 </script>
-
-</body>
+</body> 
 </html>
