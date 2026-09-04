@@ -1,0 +1,1944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>EchoEdge — AI Voice Assistant</title>
+
+    <style>
+        :root {
+            --bg: #0d1110;
+            --surface: #151b19;
+            --surface-light: #1c2421;
+            --border: rgba(255,255,255,0.09);
+
+            --primary: #9fb5a9;
+            --primary-dark: #71877b;
+
+            --text: #f2f5f3;
+            --muted: #8b9791;
+
+            --success: #8eaa9b;
+            --danger: #b87979;
+
+            --shadow: rgba(0,0,0,0.35);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            min-height: 100vh;
+
+            font-family:
+                Inter,
+                "Segoe UI",
+                Arial,
+                sans-serif;
+
+            color: var(--text);
+
+            background:
+                radial-gradient(
+                    circle at 20% 10%,
+                    rgba(159,181,169,0.10),
+                    transparent 30%
+                ),
+                radial-gradient(
+                    circle at 85% 80%,
+                    rgba(113,135,123,0.08),
+                    transparent 35%
+                ),
+                var(--bg);
+
+            overflow-x: hidden;
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+
+        /* ================================
+           APP
+        ================================= */
+
+        .app {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+
+        /* ================================
+           HEADER
+        ================================= */
+
+        .header {
+            height: 76px;
+
+            padding: 0 42px;
+
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+
+            border-bottom:
+                1px solid var(--border);
+
+            background:
+                rgba(13,17,16,0.72);
+
+            backdrop-filter: blur(20px);
+
+            position: sticky;
+            top: 0;
+
+            z-index: 20;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 13px;
+        }
+
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+
+            border-radius: 12px;
+
+            display: grid;
+            place-items: center;
+
+            background:
+                linear-gradient(
+                    145deg,
+                    #a8baaf,
+                    #64766d
+                );
+
+            box-shadow:
+                0 8px 25px rgba(0,0,0,0.25);
+        }
+
+        .brand-icon svg {
+            width: 22px;
+            stroke: #101512;
+        }
+
+        .brand-name {
+            font-size: 18px;
+            font-weight: 700;
+
+            letter-spacing: -0.3px;
+        }
+
+        .brand-sub {
+            margin-top: 2px;
+
+            font-size: 9px;
+
+            letter-spacing: 1.8px;
+
+            color: var(--muted);
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+
+            padding: 8px 13px;
+
+            border:
+                1px solid var(--border);
+
+            border-radius: 999px;
+
+            background:
+                rgba(255,255,255,0.035);
+
+            color: var(--muted);
+
+            font-size: 11px;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+
+            border-radius: 50%;
+
+            background: var(--success);
+
+            box-shadow:
+                0 0 12px rgba(142,170,155,0.6);
+        }
+
+
+        /* ================================
+           MAIN
+        ================================= */
+
+        .main {
+            width: 100%;
+            max-width: 900px;
+
+            margin: 0 auto;
+
+            padding:
+                72px 20px 70px;
+
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+
+        /* ================================
+           HERO
+        ================================= */
+
+        .title {
+            text-align: center;
+
+            margin-bottom: 45px;
+        }
+
+        .eyebrow {
+            margin-bottom: 13px;
+
+            font-size: 10px;
+
+            letter-spacing: 2.5px;
+
+            text-transform: uppercase;
+
+            color: var(--primary);
+        }
+
+        .title h1 {
+            font-size:
+                clamp(38px, 6vw, 62px);
+
+            line-height: 1.05;
+
+            letter-spacing: -2.8px;
+
+            font-weight: 650;
+        }
+
+        .title p {
+            margin-top: 14px;
+
+            color: var(--muted);
+
+            font-size: 14px;
+        }
+
+
+        /* ================================
+           MICROPHONE
+        ================================= */
+
+        .mic-wrapper {
+            width: 220px;
+            height: 220px;
+
+            position: relative;
+
+            display: grid;
+            place-items: center;
+
+            margin-bottom: 18px;
+        }
+
+        .ring {
+            position: absolute;
+
+            width: 145px;
+            height: 145px;
+
+            border-radius: 50%;
+
+            border:
+                1px solid rgba(159,181,169,0.35);
+
+            opacity: 0;
+        }
+
+        .listening .ring:nth-child(1) {
+            animation:
+                pulse 2.5s infinite;
+        }
+
+        .listening .ring:nth-child(2) {
+            animation:
+                pulse 2.5s infinite 0.8s;
+        }
+
+        .listening .ring:nth-child(3) {
+            animation:
+                pulse 2.5s infinite 1.6s;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.7);
+                opacity: 0.55;
+            }
+
+            100% {
+                transform: scale(1.8);
+                opacity: 0;
+            }
+        }
+
+        .mic-button {
+            width: 124px;
+            height: 124px;
+
+            border: 1px solid rgba(255,255,255,0.12);
+
+            border-radius: 50%;
+
+            position: relative;
+            z-index: 2;
+
+            display: grid;
+            place-items: center;
+
+            background:
+                linear-gradient(
+                    145deg,
+                    #b7c6be,
+                    #71847a
+                );
+
+            box-shadow:
+                0 20px 55px rgba(0,0,0,0.42),
+                inset 0 1px 0 rgba(255,255,255,0.3);
+
+            transition:
+                transform 0.25s ease,
+                box-shadow 0.25s ease;
+        }
+
+        .mic-button:hover {
+            transform:
+                translateY(-4px)
+                scale(1.03);
+
+            box-shadow:
+                0 25px 65px rgba(0,0,0,0.48);
+        }
+
+        .mic-button.listening {
+            background:
+                linear-gradient(
+                    145deg,
+                    #70867b,
+                    #4f6258
+                );
+
+            box-shadow:
+                0 0 0 10px rgba(142,170,155,0.08),
+                0 0 65px rgba(142,170,155,0.22),
+                0 25px 60px rgba(0,0,0,0.45);
+        }
+
+        .mic-button svg {
+            width: 40px;
+            height: 40px;
+        }
+
+
+        /* ================================
+           VOICE STATUS
+        ================================= */
+
+        .voice-status {
+            min-height: 22px;
+
+            margin-bottom: 34px;
+
+            text-align: center;
+
+            color: var(--muted);
+
+            font-size: 12px;
+        }
+
+        .voice-status strong {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+
+        /* ================================
+           CONVERSATION
+        ================================= */
+
+        .conversation {
+            width: min(720px, 94vw);
+
+            display: flex;
+            flex-direction: column;
+
+            gap: 12px;
+
+            max-height: 400px;
+
+            overflow-y: auto;
+
+            padding-right: 5px;
+        }
+
+        .conversation::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .conversation::-webkit-scrollbar-thumb {
+            background: #36413c;
+            border-radius: 10px;
+        }
+
+        .message {
+            padding: 16px 18px;
+
+            border-radius: 14px;
+
+            line-height: 1.6;
+
+            font-size: 13px;
+
+            animation:
+                appear 0.3s ease;
+
+            border:
+                1px solid var(--border);
+        }
+
+        @keyframes appear {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .user-message {
+            align-self: flex-end;
+
+            max-width: 78%;
+
+            background:
+                rgba(159,181,169,0.11);
+
+            border-bottom-right-radius: 4px;
+        }
+
+        .ai-message {
+            align-self: flex-start;
+
+            max-width: 82%;
+
+            background:
+                rgba(255,255,255,0.035);
+
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-label {
+            margin-bottom: 6px;
+
+            font-size: 9px;
+
+            text-transform: uppercase;
+
+            letter-spacing: 1.6px;
+
+            color: var(--primary);
+        }
+
+
+        /* ================================
+           INPUT
+        ================================= */
+
+        .input-wrapper {
+            width: min(720px, 94vw);
+
+            margin-top: 18px;
+
+            display: flex;
+
+            gap: 9px;
+        }
+
+        .input {
+            flex: 1;
+
+            height: 52px;
+
+            padding:
+                0 17px;
+
+            border:
+                1px solid var(--border);
+
+            border-radius: 13px;
+
+            outline: none;
+
+            color: var(--text);
+
+            background:
+                rgba(255,255,255,0.045);
+
+            transition:
+                border 0.2s ease,
+                background 0.2s ease;
+        }
+
+        .input:focus {
+            border-color:
+                rgba(159,181,169,0.45);
+
+            background:
+                rgba(255,255,255,0.065);
+        }
+
+        .input::placeholder {
+            color: #69736e;
+        }
+
+        .ask {
+            min-width: 90px;
+
+            border: none;
+
+            border-radius: 13px;
+
+            background:
+                var(--primary);
+
+            color: #111713;
+
+            font-weight: 650;
+
+            transition:
+                transform 0.2s ease,
+                opacity 0.2s ease;
+        }
+
+        .ask:hover {
+            transform: translateY(-1px);
+            opacity: 0.9;
+        }
+
+
+        /* ================================
+           WEATHER
+        ================================= */
+
+        .weather {
+            width: min(720px, 94vw);
+
+            margin-top: 18px;
+
+            padding: 24px;
+
+            border:
+                1px solid var(--border);
+
+            border-radius: 18px;
+
+            background:
+                rgba(255,255,255,0.035);
+
+            display: none;
+
+            animation:
+                appear 0.35s ease;
+        }
+
+        .weather-header {
+            display: flex;
+
+            justify-content: space-between;
+
+            align-items: center;
+        }
+
+        .weather-city {
+            font-size: 19px;
+
+            font-weight: 600;
+        }
+
+        .weather-symbol {
+            width: 48px;
+            height: 48px;
+
+            border-radius: 14px;
+
+            display: grid;
+            place-items: center;
+
+            border:
+                1px solid var(--border);
+
+            background:
+                rgba(159,181,169,0.08);
+        }
+
+        .weather-symbol svg {
+            width: 25px;
+            height: 25px;
+
+            stroke: var(--primary);
+        }
+
+        .temperature {
+            margin:
+                22px 0 4px;
+
+            font-size: 54px;
+
+            line-height: 1;
+
+            font-weight: 600;
+
+            letter-spacing: -2px;
+        }
+
+        .condition {
+            color: var(--muted);
+
+            font-size: 12px;
+        }
+
+        .weather-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(3, 1fr);
+
+            gap: 10px;
+
+            margin-top: 24px;
+        }
+
+        .weather-box {
+            padding: 14px;
+
+            border-radius: 12px;
+
+            background:
+                rgba(255,255,255,0.035);
+
+            border:
+                1px solid var(--border);
+        }
+
+        .weather-label {
+            font-size: 9px;
+
+            color: var(--muted);
+
+            letter-spacing: 1px;
+        }
+
+        .weather-value {
+            margin-top: 5px;
+
+            font-size: 13px;
+
+            font-weight: 600;
+        }
+
+
+        /* ================================
+           FOOTER
+        ================================= */
+
+        .footer {
+            margin-top: 38px;
+
+            color: #59635e;
+
+            font-size: 10px;
+
+            letter-spacing: 1px;
+
+            text-transform: uppercase;
+        }
+
+
+        /* ================================
+           MOBILE
+        ================================= */
+
+        @media (max-width: 600px) {
+
+            .header {
+                height: 68px;
+
+                padding:
+                    0 18px;
+            }
+
+            .brand-sub {
+                display: none;
+            }
+
+            .status {
+                padding: 7px 10px;
+            }
+
+            .main {
+                padding:
+                    52px 16px 50px;
+            }
+
+            .title {
+                margin-bottom: 35px;
+            }
+
+            .title h1 {
+                font-size: 42px;
+
+                letter-spacing: -2px;
+            }
+
+            .mic-wrapper {
+                width: 190px;
+                height: 190px;
+            }
+
+            .mic-button {
+                width: 110px;
+                height: 110px;
+            }
+
+            .mic-button svg {
+                width: 35px;
+            }
+
+            .conversation {
+                width: 100%;
+            }
+
+            .user-message,
+            .ai-message {
+                max-width: 90%;
+            }
+
+            .input-wrapper {
+                width: 100%;
+
+                flex-direction: column;
+            }
+
+            .input {
+                width: 100%;
+            }
+
+            .ask {
+                height: 48px;
+            }
+
+            .weather {
+                width: 100%;
+            }
+
+            .weather-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+
+<body>
+
+<div class="app">
+
+    <!-- HEADER -->
+
+    <header class="header">
+
+        <div class="brand">
+
+            <div class="brand-icon">
+
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+                    <rect
+                        x="9"
+                        y="3"
+                        width="6"
+                        height="11"
+                        rx="3"
+                    />
+
+                    <path
+                        d="M5.5 11a6.5 6.5 0 0 0 13 0"
+                    />
+
+                    <path
+                        d="M12 17.5V21"
+                    />
+
+                    <path
+                        d="M9 21h6"
+                    />
+                </svg>
+
+            </div>
+
+
+            <div>
+
+                <div class="brand-name">
+                    EchoEdge
+                </div>
+
+                <div class="brand-sub">
+                    EDGE AI VOICE ASSISTANT
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="status">
+
+            <span
+                class="status-dot"
+                id="statusDot"
+            ></span>
+
+            <span id="connection">
+                Ready
+            </span>
+
+        </div>
+
+    </header>
+
+
+    <!-- MAIN -->
+
+    <main class="main">
+
+
+        <!-- HERO -->
+
+        <section class="title">
+
+            <div class="eyebrow">
+                Intelligent Voice Interface
+            </div>
+
+            <h1>
+                How can I help?
+            </h1>
+
+            <p>
+                Speak naturally or type your question.
+            </p>
+
+        </section>
+
+
+        <!-- MICROPHONE -->
+
+        <div
+            class="mic-wrapper"
+            id="micWrapper"
+        >
+
+            <div class="ring"></div>
+            <div class="ring"></div>
+            <div class="ring"></div>
+
+
+            <button
+                class="mic-button"
+                id="micButton"
+                aria-label="Start voice recognition"
+            >
+
+                <svg
+                    id="micIcon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#17201B"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                >
+
+                    <rect
+                        x="9"
+                        y="3"
+                        width="6"
+                        height="11"
+                        rx="3"
+                    />
+
+                    <path
+                        d="M5.5 11a6.5 6.5 0 0 0 13 0"
+                    />
+
+                    <path
+                        d="M12 17.5V21"
+                    />
+
+                    <path
+                        d="M9 21h6"
+                    />
+
+                </svg>
+
+            </button>
+
+        </div>
+
+
+        <!-- VOICE STATUS -->
+
+        <div
+            class="voice-status"
+            id="voiceStatus"
+        >
+            Tap the microphone to speak
+        </div>
+
+
+        <!-- CONVERSATION -->
+
+        <div
+            class="conversation"
+            id="conversation"
+        >
+
+            <div class="message ai-message">
+
+                <div class="message-label">
+                    EchoEdge
+                </div>
+
+                Hello. I'm EchoEdge, your edge AI voice assistant.
+                Ask me anything.
+
+            </div>
+
+        </div>
+
+
+        <!-- WEATHER -->
+
+        <div
+            class="weather"
+            id="weather"
+        >
+
+            <div class="weather-header">
+
+                <div>
+
+                    <div class="message-label">
+                        Current Weather
+                    </div>
+
+                    <div
+                        class="weather-city"
+                        id="weatherCity"
+                    >
+                        Loading...
+                    </div>
+
+                </div>
+
+
+                <div
+                    class="weather-symbol"
+                    id="weatherIcon"
+                >
+
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.7"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <circle cx="12" cy="12" r="4"></circle>
+                        <path d="M12 2v2"></path>
+                        <path d="M12 20v2"></path>
+                        <path d="M4.93 4.93l1.41 1.41"></path>
+                        <path d="M17.66 17.66l1.41 1.41"></path>
+                        <path d="M2 12h2"></path>
+                        <path d="M20 12h2"></path>
+                        <path d="M4.93 19.07l1.41-1.41"></path>
+                        <path d="M17.66 6.34l1.41-1.41"></path>
+                    </svg>
+
+                </div>
+
+            </div>
+
+
+            <div
+                class="temperature"
+                id="temperature"
+            >
+                --°C
+            </div>
+
+
+            <div
+                class="condition"
+                id="condition"
+            >
+                Loading...
+            </div>
+
+
+            <div class="weather-grid">
+
+                <div class="weather-box">
+
+                    <div class="weather-label">
+                        FEELS LIKE
+                    </div>
+
+                    <div
+                        class="weather-value"
+                        id="feels"
+                    >
+                        --°C
+                    </div>
+
+                </div>
+
+
+                <div class="weather-box">
+
+                    <div class="weather-label">
+                        HUMIDITY
+                    </div>
+
+                    <div
+                        class="weather-value"
+                        id="humidity"
+                    >
+                        --%
+                    </div>
+
+                </div>
+
+
+                <div class="weather-box">
+
+                    <div class="weather-label">
+                        WIND
+                    </div>
+
+                    <div
+                        class="weather-value"
+                        id="wind"
+                    >
+                        -- km/h
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- TEXT INPUT -->
+
+        <div class="input-wrapper">
+
+            <input
+                id="input"
+                class="input"
+                type="text"
+                placeholder="Type your question..."
+                autocomplete="off"
+            >
+
+            <button
+                class="ask"
+                id="ask"
+            >
+                Ask
+            </button>
+
+        </div>
+
+
+        <div class="footer">
+            EchoEdge • Edge AI Voice Technology
+        </div>
+
+    </main>
+
+</div>
+
+
+<script>
+
+    /* =========================================
+       CONFIG
+    ========================================= */
+
+    const API_URL =
+        "http://localhost:5000/api/ask";
+
+
+    /* =========================================
+       ELEMENTS
+    ========================================= */
+
+    const micButton =
+        document.getElementById("micButton");
+
+    const micWrapper =
+        document.getElementById("micWrapper");
+
+    const micIcon =
+        document.getElementById("micIcon");
+
+    const voiceStatus =
+        document.getElementById("voiceStatus");
+
+    const conversation =
+        document.getElementById("conversation");
+
+    const input =
+        document.getElementById("input");
+
+    const ask =
+        document.getElementById("ask");
+
+    const connection =
+        document.getElementById("connection");
+
+    const weather =
+        document.getElementById("weather");
+
+
+    /* =========================================
+       SPEECH RECOGNITION
+    ========================================= */
+
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+    let recognition = null;
+
+
+    if (SpeechRecognition) {
+
+        recognition =
+            new SpeechRecognition();
+
+        recognition.lang =
+            "en-US";
+
+        recognition.continuous =
+            false;
+
+        recognition.interimResults =
+            false;
+
+
+        recognition.onstart = () => {
+
+            micButton.classList.add(
+                "listening"
+            );
+
+            micWrapper.classList.add(
+                "listening"
+            );
+
+            micIcon.setAttribute(
+                "stroke",
+                "#FFFFFF"
+            );
+
+            voiceStatus.innerHTML =
+                "<strong>Listening...</strong> Speak now";
+
+            connection.textContent =
+                "Listening";
+
+        };
+
+
+        recognition.onresult = (event) => {
+
+            const text =
+                event.results[0][0].transcript;
+
+            input.value =
+                text;
+
+            addUserMessage(text);
+
+            processCommand(text);
+
+        };
+
+
+        recognition.onerror = (event) => {
+
+            console.error(
+                "Speech error:",
+                event.error
+            );
+
+            resetVoice();
+
+            addAIMessage(
+                "I couldn't understand that. Please try again."
+            );
+
+        };
+
+
+        recognition.onend = () => {
+
+            resetVoice();
+
+        };
+
+    }
+
+
+    /* =========================================
+       MICROPHONE
+    ========================================= */
+
+    micButton.addEventListener(
+        "click",
+        () => {
+
+            if (!recognition) {
+
+                addAIMessage(
+                    "Voice recognition is not supported in this browser. Please use Chrome or Edge."
+                );
+
+                return;
+            }
+
+
+            try {
+
+                recognition.start();
+
+            } catch (error) {
+
+                console.log(error);
+
+            }
+
+        }
+    );
+
+
+    function resetVoice() {
+
+        micButton.classList.remove(
+            "listening"
+        );
+
+        micWrapper.classList.remove(
+            "listening"
+        );
+
+        micIcon.setAttribute(
+            "stroke",
+            "#17201B"
+        );
+
+        voiceStatus.textContent =
+            "Tap the microphone to speak";
+
+        connection.textContent =
+            "Ready";
+
+    }
+
+
+    /* =========================================
+       USER MESSAGE
+    ========================================= */
+
+    function addUserMessage(text) {
+
+        const div =
+            document.createElement("div");
+
+        div.className =
+            "message user-message";
+
+        div.innerHTML = `
+
+            <div class="message-label">
+                You
+            </div>
+
+            ${escapeHTML(text)}
+
+        `;
+
+        conversation.appendChild(div);
+
+        scrollConversation();
+
+    }
+
+
+    /* =========================================
+       AI MESSAGE
+    ========================================= */
+
+    function addAIMessage(text) {
+
+        const div =
+            document.createElement("div");
+
+        div.className =
+            "message ai-message";
+
+        div.innerHTML = `
+
+            <div class="message-label">
+                EchoEdge
+            </div>
+
+            ${escapeHTML(text)}
+
+        `;
+
+        conversation.appendChild(div);
+
+        scrollConversation();
+
+    }
+
+
+    function scrollConversation() {
+
+        conversation.scrollTop =
+            conversation.scrollHeight;
+
+    }
+
+
+    /* =========================================
+       PROCESS COMMAND
+    ========================================= */
+
+    async function processCommand(command) {
+
+        connection.textContent =
+            "Processing";
+
+        voiceStatus.innerHTML =
+            "<strong>EchoEdge is thinking...</strong>";
+
+
+        if (
+            command
+                .toLowerCase()
+                .includes("weather")
+        ) {
+
+            await getWeather();
+
+            return;
+
+        }
+
+
+        await askAI(command);
+
+    }
+
+
+    /* =========================================
+       AI BACKEND
+    ========================================= */
+
+    async function askAI(question) {
+
+        try {
+
+            const response =
+                await fetch(
+                    API_URL,
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify({
+                                message: question
+                            })
+                    }
+                );
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "Backend unavailable"
+                );
+
+            }
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error
+                );
+
+            }
+
+
+            addAIMessage(
+                data.answer
+            );
+
+
+            speak(
+                data.answer
+            );
+
+
+            connection.textContent =
+                "Ready";
+
+            voiceStatus.textContent =
+                "Tap the microphone to speak";
+
+
+        } catch (error) {
+
+            console.error(error);
+
+            addAIMessage(
+                "I couldn't connect to the EchoEdge AI backend. Make sure the backend server is running."
+            );
+
+            connection.textContent =
+                "Offline";
+
+            voiceStatus.textContent =
+                "Backend connection required";
+
+        }
+
+    }
+
+
+    /* =========================================
+       WEATHER
+    ========================================= */
+
+    async function getWeather() {
+
+        if (!navigator.geolocation) {
+
+            addAIMessage(
+                "Your browser does not support location services."
+            );
+
+            return;
+
+        }
+
+
+        voiceStatus.innerHTML =
+            "<strong>Finding your location...</strong>";
+
+        connection.textContent =
+            "Locating";
+
+
+        navigator.geolocation.getCurrentPosition(
+
+            async position => {
+
+                const lat =
+                    position.coords.latitude;
+
+                const lon =
+                    position.coords.longitude;
+
+
+                try {
+
+                    connection.textContent =
+                        "Fetching weather";
+
+
+                    const url =
+                        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto`;
+
+
+                    const response =
+                        await fetch(url);
+
+
+                    const data =
+                        await response.json();
+
+
+                    showWeather(data);
+
+
+                } catch (error) {
+
+                    console.error(error);
+
+                    addAIMessage(
+                        "I couldn't retrieve the weather right now."
+                    );
+
+                }
+
+            },
+
+
+            error => {
+
+                console.error(error);
+
+                addAIMessage(
+                    "Please allow location access so EchoEdge can check your local weather."
+                );
+
+                connection.textContent =
+                    "Location required";
+
+            }
+
+        );
+
+    }
+
+
+    /* =========================================
+       SHOW WEATHER
+    ========================================= */
+
+    function showWeather(data) {
+
+        const current =
+            data.current;
+
+
+        const temp =
+            Math.round(
+                current.temperature_2m
+            );
+
+
+        const feels =
+            Math.round(
+                current.apparent_temperature
+            );
+
+
+        const humidity =
+            current.relative_humidity_2m;
+
+
+        const wind =
+            Math.round(
+                current.wind_speed_10m
+            );
+
+
+        const weatherInfo =
+            getWeatherInfo(
+                current.weather_code
+            );
+
+
+        document.getElementById(
+            "temperature"
+        ).textContent =
+            `${temp}°C`;
+
+
+        document.getElementById(
+            "feels"
+        ).textContent =
+            `${feels}°C`;
+
+
+        document.getElementById(
+            "humidity"
+        ).textContent =
+            `${humidity}%`;
+
+
+        document.getElementById(
+            "wind"
+        ).textContent =
+            `${wind} km/h`;
+
+
+        document.getElementById(
+            "condition"
+        ).textContent =
+            weatherInfo.text;
+
+
+        document.getElementById(
+            "weatherCity"
+        ).textContent =
+            `${Math.abs(data.latitude).toFixed(2)}° ${
+                data.latitude >= 0 ? "N" : "S"
+            }, ${
+                Math.abs(data.longitude).toFixed(2)
+            }° ${
+                data.longitude >= 0 ? "E" : "W"
+            }`;
+
+
+        document.getElementById(
+            "weatherIcon"
+        ).innerHTML =
+            weatherInfo.svg;
+
+
+        weather.style.display =
+            "block";
+
+
+        const answer =
+            `The current temperature is ${temp} degrees Celsius with ${weatherInfo.text.toLowerCase()}. It feels like ${feels} degrees. Humidity is ${humidity} percent and wind speed is ${wind} kilometers per hour.`;
+
+
+        addAIMessage(answer);
+
+        speak(answer);
+
+
+        connection.textContent =
+            "Ready";
+
+        voiceStatus.textContent =
+            "Tap the microphone to speak";
+
+    }
+
+
+    /* =========================================
+       WEATHER INFORMATION
+    ========================================= */
+
+    function getWeatherInfo(code) {
+
+        const sun = `
+            <svg viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round">
+
+                <circle cx="12" cy="12" r="4"></circle>
+                <path d="M12 2v2"></path>
+                <path d="M12 20v2"></path>
+                <path d="M4.93 4.93l1.41 1.41"></path>
+                <path d="M17.66 17.66l1.41 1.41"></path>
+                <path d="M2 12h2"></path>
+                <path d="M20 12h2"></path>
+                <path d="M4.93 19.07l1.41-1.41"></path>
+                <path d="M17.66 6.34l1.41-1.41"></path>
+
+            </svg>
+        `;
+
+
+        const cloud = `
+            <svg viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round">
+
+                <path d="M17.5 19H8a5 5 0 1 1 1.8-9.66A6 6 0 0 1 21 12.5"></path>
+                <path d="M17 19a4 4 0 0 0 0-8"></path>
+
+            </svg>
+        `;
+
+
+        const rain = `
+            <svg viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round">
+
+                <path d="M17.5 19H8a5 5 0 1 1 1.8-9.66A6 6 0 0 1 21 12.5"></path>
+                <path d="M8 21l-1 2"></path>
+                <path d="M13 21l-1 2"></path>
+                <path d="M18 21l-1 2"></path>
+
+            </svg>
+        `;
+
+
+        if (code === 0) {
+
+            return {
+                text: "Clear sky",
+                svg: sun
+            };
+
+        }
+
+
+        if (code === 1 || code === 2) {
+
+            return {
+                text: "Partly cloudy",
+                svg: cloud
+            };
+
+        }
+
+
+        if (code === 3) {
+
+            return {
+                text: "Overcast",
+                svg: cloud
+            };
+
+        }
+
+
+        if (code >= 45 && code <= 48) {
+
+            return {
+                text: "Foggy",
+                svg: cloud
+            };
+
+        }
+
+
+        if (code >= 51 && code <= 67) {
+
+            return {
+                text: "Rain",
+                svg: rain
+            };
+
+        }
+
+
+        if (code >= 71 && code <= 77) {
+
+            return {
+                text: "Snow",
+                svg: cloud
+            };
+
+        }
+
+
+        if (code >= 80 && code <= 82) {
+
+            return {
+                text: "Rain showers",
+                svg: rain
+            };
+
+        }
+
+
+        if (code >= 95) {
+
+            return {
+                text: "Thunderstorm",
+                svg: rain
+            };
+
+        }
+
+
+        return {
+            text: "Unknown conditions",
+            svg: cloud
+        };
+
+    }
+
+
+    /* =========================================
+       TEXT INPUT
+    ========================================= */
+
+    ask.addEventListener(
+        "click",
+        sendText
+    );
+
+
+    input.addEventListener(
+        "keydown",
+        event => {
+
+            if (event.key === "Enter") {
+
+                sendText();
+
+            }
+
+        }
+    );
+
+
+    function sendText() {
+
+        const question =
+            input.value.trim();
+
+
+        if (!question)
+            return;
+
+
+        addUserMessage(
+            question
+        );
+
+
+        input.value =
+            "";
+
+
+        processCommand(
+            question
+        );
+
+    }
+
+
+    /* =========================================
+       TEXT TO SPEECH
+    ========================================= */
+
+    function speak(text) {
+
+        if (
+            !("speechSynthesis" in window)
+        )
+            return;
+
+
+        window.speechSynthesis.cancel();
+
+
+        const utterance =
+            new SpeechSynthesisUtterance(
+                text
+            );
+
+
+        utterance.rate =
+            1;
+
+        utterance.pitch =
+            1;
+
+        utterance.volume =
+            1;
+
+
+        window.speechSynthesis.speak(
+            utterance
+        );
+
+    }
+
+
+    /* =========================================
+       SECURITY
+    ========================================= */
+
+    function escapeHTML(text) {
+
+        const div =
+            document.createElement("div");
+
+
+        div.textContent =
+            text;
+
+
+        return div.innerHTML;
+
+    }
+
+</script>
+
+</body>
+</html>
